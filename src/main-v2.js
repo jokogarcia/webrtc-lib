@@ -1,6 +1,6 @@
 import './style.css'
 import { getDeviceId, setDeviceDisplayName } from './device-id.js'
-import { initiateConnection, sendMessage } from './my-webrtc-functions-v2.js'
+import { initiateConnection, broadcastMessage, getActiveConnections } from './my-webrtc-functions-v2.js'
 
 document.querySelector('#app').innerHTML = `
 <style>
@@ -55,6 +55,7 @@ const messageInput = document.getElementById('message-input')
 const sendBtn = document.getElementById('send-btn')
 let dataChannelStatus = 'closed';
 let currentDisplayName = '';
+let activeConnections = getActiveConnections();
 getDeviceId().then((id) => {
   displayNameInput.value = id.displayName;
   currentDisplayName = id.displayName;
@@ -97,8 +98,8 @@ displayNameInput.addEventListener('keydown', (event) => {
   }
 });
 document.addEventListener('data-channel-state', (event) => {
-  console.log('Data channel state changed:', event.detail);
-  dataChannelStatus = event.detail;
+ activeConnections = getActiveConnections();
+ dataChannelStatus = activeConnections.length > 0 ? 'open' : 'closed';
   statusDiv.textContent = `Data Channel is ${dataChannelStatus}`;
   sendBtn.disabled = messageInput.value.trim() === '' || dataChannelStatus !== 'open';
 });
@@ -138,7 +139,7 @@ messageInput.addEventListener('keydown', (event) => {
 sendBtn.addEventListener('click', () => {
   const message = messageInput.value.trim()
   try{
-    sendMessage(message)
+    broadcastMessage(message)
     const msgDiv = document.createElement('div')
     msgDiv.classList.add('my-message')
     msgDiv.textContent = message

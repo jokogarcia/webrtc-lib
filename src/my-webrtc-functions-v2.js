@@ -21,8 +21,8 @@ const servers = {
   iceCandidatePoolSize: 10,
 };
 
-let pc = new RTCPeerConnection(servers);
-let _dataChannel = null;
+// Store multiple peer connections: callId -> { pc, dataChannel }
+const peerConnections = new Map();
 
 /**
  *
@@ -30,11 +30,19 @@ let _dataChannel = null;
  * @param {string} calleeName The id of the callee
  */
 export async function initiateConnection(callerName, calleeName) {
-  // 1. Create the data channel
-  setDataChannel(pc.createDataChannel(`${callerName}-<>-${calleeName}`));
+  // 1. Create new peer connection for this call
+  const pc = new RTCPeerConnection(servers);
+  const callDoc = db.collection("calls").doc();
+  const callId = callDoc.id;
+  
+  // Create data channel
+  const dataChannel = pc.createDataChannel(`${callerName}-<>-${calleeName}`);
+  
+  // Store this connection
+  peerConnections.set(callId, { pc, dataChannel });
+  setDataChannel(dataChannel, callId);
 
   // 2. Setup Firebase refs (same as Fireship demo)
-  const callDoc = db.collection("calls").doc();
   callDoc.set({ callerName, calleeName });
   const offerCandidates = callDoc.collection("offerCandidates");
   const answerCandidates = callDoc.collection("answerCandidates");
@@ -75,6 +83,9 @@ export async function initiateConnection(callerName, calleeName) {
 }
 
 export async function replyToConnection(callId) {
+  // Create new peer connection for this call
+  const pc = new RTCPeerConnection(servers);
+  
   const callDoc = db.collection("calls").doc(callId);
   const peerName = (await callDoc.get()).data().callerName;
   const answerCandidates = callDoc.collection("answerCandidates");
@@ -86,7 +97,10 @@ export async function replyToConnection(callId) {
 
   // IMPORTANT: Listen for the data channel initiated by the caller
   pc.ondatachannel = (event) => {
-    setDataChannel(event.channel);
+    const dataChannel = event.channel;
+    // Store this connection
+    peerConnections.set(callId, { pc, dataChannel });
+    setDataChannel(dataChannel, callId);
   };
 
   const callData = (await callDoc.get()).data();
@@ -113,29 +127,32 @@ export async function replyToConnection(callId) {
   });
 }
 
-let _channelStatus = "closed";
 /**
  *
  * @param {RTCDataChannel} channel
+ * @param {string} callId
  */
-function setDataChannel(channel) {
-  _dataChannel = channel;
-  _dataChannel.onopen = () => {
+function setDataChannel(channel, callId) {
+  channel.onopen = () => {
     document.dispatchEvent(
-      new CustomEvent("data-channel-state", { detail: "open" })
+      new CustomEvent("data-channel-state", { 
+        detail: { state: "open", callId } 
+      })
     );
-    _channelStatus = "open";
   };
-  _dataChannel.onclose = () => {
+  channel.onclose = () => {
     document.dispatchEvent(
-      new CustomEvent("data-channel-state", { detail: "closed" })
+      new CustomEvent("data-channel-state", { 
+        detail: { state: "closed", callId } 
+      })
     );
-    _channelStatus = "closed";
+    // Clean up when channel closes
+    peerConnections.delete(callId);
   };
 
-  _dataChannel.onmessage = (event) => {
+  channel.onmessage = (event) => {
     /** @type {string} */
-    const channelName = _dataChannel.label;
+    const channelName = channel.label;
     if (typeof event.data === "string") {
       try {
         const message = JSON.parse(event.data);
@@ -158,8 +175,8 @@ function setDataChannel(channel) {
             detail: {
               channelName,
               data: event.data,
-            },
-            
+              callId
+            }
           })
         );
       }
@@ -170,18 +187,43 @@ function setDataChannel(channel) {
   };
 }
 /**
- * Sends a message over the established data channel.
+ * Sends a message over a specific data channel.
  * @param {any} message
+ * @param {string} callId
  * @throws Will throw an error if the data channel is not established or not open.
  */
-export function sendMessage(message) {
-  if (!_dataChannel) {
-    throw new Error("Data channel is not established");
+export function sendMessage(message, callId) {
+  const connection = peerConnections.get(callId);
+  if (!connection) {
+    throw new Error(`No connection found for callId: ${callId}`);
   }
-  if (_channelStatus !== "open") {
+  if (connection.dataChannel.readyState !== "open") {
     throw new Error("Data channel is not open");
   }
-  _dataChannel.send(message);
+  connection.dataChannel.send(message);
+}
+
+/**
+ * Broadcasts a message to all open data channels.
+ * @param {any} message
+ */
+export function broadcastMessage(message) {
+  for (const [callId, connection] of peerConnections) {
+    if (connection.dataChannel.readyState === "open") {
+      connection.dataChannel.send(message);
+    }
+  }
+}
+
+/**
+ * Gets all active connection IDs
+ * @returns {string[]}
+ */
+export function getActiveConnections() {
+  return Array.from(peerConnections.keys()).filter(callId => {
+    const connection = peerConnections.get(callId);
+    return connection && connection.dataChannel.readyState === "open";
+  });
 }
 //listen for incoming calls:
 getDeviceId().then((id) => {
@@ -213,10 +255,13 @@ getDeviceId().then((id) => {
 });
 
 // File sending function
-export async function sendFile(file) {
-  if (!_dataChannel || _dataChannel.readyState !== "open") {
+export async function sendFile(file, callId) {
+  const connection = peerConnections.get(callId);
+  if (!connection || connection.dataChannel.readyState !== "open") {
     throw new Error("Data channel is not open");
   }
+  
+  const _dataChannel = connection.dataChannel;
 
   // For large files, you might want to implement chunking
   const MAX_CHUNK_SIZE = 16384; // 16KB chunks
