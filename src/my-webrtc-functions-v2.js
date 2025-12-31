@@ -12,7 +12,7 @@ export function setAutoreplyEnabled(enabled) {
   _autoreplyEnabled = enabled;
 }
 
-const servers = {
+let servers = {
   iceServers: [
     {
       urls: ["stun:stun1.l.google.com:19302", "stun:stun2.l.google.com:19302"],
@@ -20,6 +20,17 @@ const servers = {
   ],
   iceCandidatePoolSize: 10,
 };
+/**
+ * If used, it should be called before initiating any connections.
+ * Otherwise, the default STUN servers will be used.
+ * 
+ * @param {RTCIceServer[]} iceServers
+ * @param {number} iceCandidatePoolSize
+ */
+export function setIceServers(iceServers, iceCandidatePoolSize=10) {
+  servers.iceServers = iceServers;
+  servers.iceCandidatePoolSize = iceCandidatePoolSize;
+}
 
 // Store multiple peer connections: callId -> { pc, dataChannel }
 const peerConnections = new Map();
@@ -34,16 +45,16 @@ export async function initiateConnection(callerName, calleeName) {
   const pc = new RTCPeerConnection(servers);
   const callDoc = db.collection("calls").doc();
   const callId = callDoc.id;
-  
+
   // Create data channel
   const dataChannel = pc.createDataChannel(`${callerName}-<>-${calleeName}`);
-  
+
   // Store this connection
   peerConnections.set(callId, { pc, dataChannel });
   setDataChannel(dataChannel, callId);
 
   // 2. Setup Firebase refs (same as Fireship demo)
-  callDoc.set({ callerName, calleeName });
+  await callDoc.set({ callerName, calleeName });
   const offerCandidates = callDoc.collection("offerCandidates");
   const answerCandidates = callDoc.collection("answerCandidates");
 
@@ -60,7 +71,7 @@ export async function initiateConnection(callerName, calleeName) {
     type: offerDescription.type,
   };
 
-  await callDoc.set({ offer });
+  await callDoc.update({ offer });
 
   // 4. Listen for Answer
   callDoc.onSnapshot((snapshot) => {
@@ -80,12 +91,19 @@ export async function initiateConnection(callerName, calleeName) {
       }
     });
   });
+
+  //Listen for data channel initiated by the callee
+  pc.ondatachannel = (event) => {
+    const dataChannel = event.channel;
+    peerConnections.set(callId, { pc, dataChannel });
+    setDataChannel(dataChannel, callId);
+  }
 }
 
 export async function replyToConnection(callId) {
   // Create new peer connection for this call
   const pc = new RTCPeerConnection(servers);
-  
+
   const callDoc = db.collection("calls").doc(callId);
   const peerName = (await callDoc.get()).data().callerName;
   const answerCandidates = callDoc.collection("answerCandidates");
@@ -135,54 +153,44 @@ export async function replyToConnection(callId) {
 function setDataChannel(channel, callId) {
   channel.onopen = () => {
     document.dispatchEvent(
-      new CustomEvent("data-channel-state", { 
-        detail: { state: "open", callId } 
+      new CustomEvent("data-channel-state", {
+        detail: { state: "open", callId },
       })
     );
   };
   channel.onclose = () => {
     document.dispatchEvent(
-      new CustomEvent("data-channel-state", { 
-        detail: { state: "closed", callId } 
+      new CustomEvent("data-channel-state", {
+        detail: { state: "closed", callId },
       })
     );
     // Clean up when channel closes
     peerConnections.delete(callId);
   };
-
+  if (channel.label.includes("-file-")) {
+    // File transfer channel
+    channel.onmessage = async (event) => {
+      await handleFileChunk(event.data);
+    };
+    return;
+  }
   channel.onmessage = (event) => {
     /** @type {string} */
     const channelName = channel.label;
     if (typeof event.data === "string") {
-      try {
-        const message = JSON.parse(event.data);
-        if (message.type === "file-info" || message.type === "file-start") {
-          // Handle file metadata
-          handleFileMetadata(message);
-          return;
-        } else if (
-          message.type === "file-chunk" ||
-          message.type === "file-complete"
-        ) {
-          // Handle file chunks
-          handleFileChunk(message);
-          return;
-        }
-      } catch (e) {
-        // Regular text message
-        document.dispatchEvent(
-          new CustomEvent("remote-message", {
-            detail: {
-              channelName,
-              data: event.data,
-              callId
-            }
-          })
-        );
-      }
-    } else {
+      // Regular text message
+      document.dispatchEvent(
+        new CustomEvent("remote-message", {
+          detail: {
+            channelName,
+            data: event.data,
+            callId,
+          },
+        })
+      );
+    } else if (typeof event.data === "file") {
       // Binary data - could be file content
-      handleBinaryData(event.data);
+      handleFileData(event.data, channelName, callId);
     }
   };
 }
@@ -220,7 +228,7 @@ export function broadcastMessage(message) {
  * @returns {string[]}
  */
 export function getActiveConnections() {
-  return Array.from(peerConnections.keys()).filter(callId => {
+  return Array.from(peerConnections.keys()).filter((callId) => {
     const connection = peerConnections.get(callId);
     return connection && connection.dataChannel.readyState === "open";
   });
@@ -237,7 +245,7 @@ getDeviceId().then((id) => {
             await replyToConnection(change.doc.id);
             return;
           }
-          
+
           const callDoc = db.collection("calls").doc(change.doc.id);
           const callData = (await callDoc.get()).data();
           const peerId = callData.callerId;
@@ -257,149 +265,201 @@ getDeviceId().then((id) => {
 // File sending function
 export async function sendFile(file, callId) {
   const connection = peerConnections.get(callId);
-  if (!connection || connection.dataChannel.readyState !== "open") {
-    throw new Error("Data channel is not open");
+
+  if (!connection) {
+    throw new Error(`No connection found for callId: ${callId}`);
   }
-  
-  const _dataChannel = connection.dataChannel;
-
-  // For large files, you might want to implement chunking
-  const MAX_CHUNK_SIZE = 16384; // 16KB chunks
-
-  if (file.size <= MAX_CHUNK_SIZE) {
-    // Small file - send directly
-    const arrayBuffer = await file.arrayBuffer();
-    const fileMessage = {
-      type: "file",
-      name: file.name,
-      size: file.size,
-      mimeType: file.type,
-      content: arrayBuffer,
+  //create a new data channel for file transfer
+  const pc = connection.pc;
+  const fileChannel = pc.createDataChannel(
+    `${connection.dataChannel.label}-file-${file.name}`
+  );
+  return new Promise((resolve, reject) => {
+    fileChannel.onopen = () => {
+      _doFileSend(fileChannel, file)
+        .then(() => {
+          fileChannel.close();
+          resolve();
+        })
+        .catch(reject);
     };
-
-    _dataChannel.send(
-      JSON.stringify({
-        type: "file-info",
-        name: file.name,
-        size: file.size,
-        mimeType: file.type,
-      })
-    );
-
-    _dataChannel.send(arrayBuffer);
-  } else {
-    // Large file - implement chunking
-    await sendFileInChunks(file);
-  }
+    fileChannel.onerror = (error) => {
+      reject(error);
+    };
+  });
 }
 
-// Function to send large files in chunks
-async function sendFileInChunks(file) {
-  const CHUNK_SIZE = 16384; // 16KB
-  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+/**
+ *
+ * @param {RTCDataChannel} channel
+ * @param {File} file
+ */
+async function _doFileSend(channel, file) {
+  const chunkSize = 16384; // 16KB
+  const MAX_BUFFER = 65536; // 64KB
+  const totalChunks = Math.ceil(file.size / chunkSize);
+  /* PACKET FORMAT
+    TRANSFERID: 4 bytes
+    FILENAME_LENGTH: 2 bytes
+    FILESIZE: 8 bytes
+    TOTALCHUNKS: 4 bytes
+    CURRENTCHUNK: 4 bytes
+    CONTENTSIZE: 2 bytes // HARD max is 16384
+    FILENAME: variable    //header size is 24 bytes + FILENAME_LENGTH
+    CONTENT: variable
+  */
+  const transferId = Math.floor(Math.random() * 0xffffffff);
+  let offset = 0;
+  let chunkIndex = 0;
+  const fileNameBytes = new TextEncoder().encode(file.name);
+  const fileNameLength = fileNameBytes.length;
 
-  // Send file metadata first
-  _dataChannel.send(
-    JSON.stringify({
-      type: "file-start",
-      name: file.name,
-      size: file.size,
-      mimeType: file.type,
-      totalChunks: totalChunks,
+  while (offset < file.size) {
+    while (channel.bufferedAmount > MAX_BUFFER) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const chunk = file.slice(offset, offset + chunkSize);
+    const reader = new FileReader();
+    const header = new ArrayBuffer(24 + fileNameLength);
+    const headerView = new DataView(header);
+    headerView.setUint32(0, transferId); // Transfer ID
+    headerView.setUint16(4, fileNameLength); // Filename length
+    headerView.setBigUint64(6, BigInt(file.size)); // File size
+    headerView.setUint32(14, totalChunks); // Total chunks
+    headerView.setUint32(18, chunkIndex); // Current chunk index
+    headerView.setUint16(22, chunk.size); // Content size
+    // Write filename
+    new Uint8Array(header, 24).set(fileNameBytes);
+    // Read chunk and send
+    await new Promise((resolve, reject) => {
+      reader.onload = () => {
+        const content = new Uint8Array(reader.result);
+        // Combine header and content
+        const packet = new Uint8Array(header.byteLength + content.byteLength);
+        packet.set(new Uint8Array(header), 0);
+        packet.set(content, header.byteLength);
+        channel.send(packet);
+        document.dispatchEvent(
+          new CustomEvent("file-sending-progress", {
+            detail: {
+              transferId,
+              fileName: file.name,
+              fileSize: file.size,
+              totalChunks,
+              sentChunks: chunkIndex + 1,
+            },
+          })
+        );
+        resolve();
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(chunk);
+    });
+    offset += chunkSize;
+    chunkIndex++;
+  }
+}
+class OngoingFileTransfer {
+  constructor(transferId, fileName, fileSize, totalChunks) {
+    this.transferId = transferId;
+    this.fileName = fileName;
+    this.fileSize = fileSize;
+    this.totalChunks = totalChunks;
+    this.receivedChunks = 0;
+    this.chunks = [];
+  }
+
+  addChunk(chunkIndex, content) {
+    this.chunks[chunkIndex] = content;
+    this.receivedChunks++;
+  }
+
+  isComplete() {
+    return this.receivedChunks === this.totalChunks;
+  }
+
+  assembleFile() {
+    const blobParts = this.chunks.map((chunk) => new Uint8Array(chunk));
+    return new Blob(blobParts);
+  }
+}
+/** @type {Map<number, OngoingFileTransfer>} */
+const _ongoingTransfers = new Map();
+
+async function handleFileChunk(data) {
+  const dataView = new DataView(data);
+  const transferId = dataView.getUint32(0);
+  const fileNameLength = dataView.getUint16(4);
+  const fileSize = Number(dataView.getBigUint64(6));
+  const totalChunks = dataView.getUint32(14);
+  const currentChunk = dataView.getUint32(18);
+  const contentSize = dataView.getUint16(22);
+  const fileNameBytes = new Uint8Array(
+    data,
+    24,
+    fileNameLength
+  );
+  const fileName = new TextDecoder().decode(fileNameBytes);
+  const content = new Uint8Array(
+    data,
+    24 + fileNameLength,
+    contentSize
+  );
+  let transfer = _ongoingTransfers.get(transferId);
+  if (!transfer) {
+    transfer = new OngoingFileTransfer(
+      transferId,
+      fileName,
+      fileSize,
+      totalChunks
+    );
+    _ongoingTransfers.set(transferId, transfer);
+  }
+  transfer.addChunk(currentChunk, content.slice());
+  document.dispatchEvent(
+    new CustomEvent("file-receiving-progress", {
+      detail: {
+        transferId,
+        fileName,
+        fileSize,
+        totalChunks,
+        receivedChunks: transfer.receivedChunks,
+      },
     })
   );
-
-  // Send file in chunks
-  for (let i = 0; i < totalChunks; i++) {
-    const start = i * CHUNK_SIZE;
-    const end = Math.min(start + CHUNK_SIZE, file.size);
-    const chunk = file.slice(start, end);
-    const arrayBuffer = await chunk.arrayBuffer();
-
-    // Send chunk with metadata
-    _dataChannel.send(
-      JSON.stringify({
-        type: "file-chunk",
-        chunkIndex: i,
-        totalChunks: totalChunks,
+  if (transfer.isComplete()) {
+    const fileBlob = transfer.assembleFile();
+    document.dispatchEvent(
+      new CustomEvent("remote-file", {
+        detail: {
+          name: transfer.fileName,
+          size: transfer.fileSize,
+          type: fileBlob.type,
+          content: fileBlob,
+        },
       })
     );
-
-    _dataChannel.send(arrayBuffer);
-
-    // Small delay to prevent overwhelming the channel
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    _ongoingTransfers.delete(transferId);
   }
 
-  // Send completion signal
-  _dataChannel.send(
-    JSON.stringify({
-      type: "file-complete",
-      name: file.name,
+}
+
+async function handleFileData(data, channelName, callId) {
+  const name = data.name;
+  const size = data.size;
+  const type = data.type;
+  const content = await data.arrayBuffer();
+
+  document.dispatchEvent(
+    new CustomEvent("remote-file", {
+      detail: {
+        name,
+        size,
+        type,
+        content,
+        channelName,
+        callId,
+      },
     })
   );
-}
-
-// File receiving state
-let receivingFile = null;
-let fileChunks = [];
-
-function handleFileMetadata(metadata) {
-  if (metadata.type === "file-info") {
-    // Simple file transfer
-    receivingFile = metadata;
-  } else if (metadata.type === "file-start") {
-    // Chunked file transfer
-    receivingFile = metadata;
-    fileChunks = new Array(metadata.totalChunks);
-  }
-}
-
-function handleFileChunk(chunkInfo) {
-  if (chunkInfo.type === "file-complete") {
-    // Reconstruct file from chunks
-    if (receivingFile && fileChunks.length > 0) {
-      const completeFile = new Blob(fileChunks, {
-        type: receivingFile.mimeType,
-      });
-
-      document.dispatchEvent(
-        new MessageEvent("remote-file", {
-          data: {
-            name: receivingFile.name,
-            size: receivingFile.size,
-            type: receivingFile.mimeType,
-            content: completeFile,
-          },
-        })
-      );
-
-      // Reset state
-      receivingFile = null;
-      fileChunks = [];
-    }
-  }
-}
-
-function handleBinaryData(arrayBuffer) {
-  if (receivingFile) {
-    if (receivingFile.totalChunks) {
-      // This is a chunk of a larger file - will be handled by chunk system
-      // Store the chunk (you'd need to track chunk index from previous message)
-      fileChunks.push(arrayBuffer);
-    } else {
-      // Simple file transfer
-      document.dispatchEvent(
-        new MessageEvent("remote-file", {
-          data: {
-            name: receivingFile.name,
-            size: receivingFile.size,
-            type: receivingFile.mimeType,
-            content: arrayBuffer,
-          },
-        })
-      );
-      receivingFile = null;
-    }
-  }
 }

@@ -1,23 +1,24 @@
 import { getDb } from "./utils";
 const ID_KEY = "device_id_v2b";
-/**
- * Gets the device ID from localStorage or generates a new one if none exists.
- * @async
- * @function getDeviceId
- * @returns {Promise<{uuid: string, displayName: string}>} The device ID object containing uuid and displayName
- * @throws {Error} When failed to get device ID from local storage
- */
+let getDeviceIdPromise = null;
+
 export async function getDeviceId() {
-  let storedId = localStorage.getItem(ID_KEY);
-  if (!storedId) {
-    const newId = await generateDeviceId();
-    localStorage.setItem(ID_KEY, JSON.stringify(newId));
-    storedId = localStorage.getItem(ID_KEY);
-  }
-  if (storedId && typeof storedId === "string") {
-    return JSON.parse(storedId);
-  }
-  throw new Error("Failed to get device ID from local storage");
+  if (getDeviceIdPromise) return getDeviceIdPromise;
+
+  getDeviceIdPromise = (async () => {
+    let storedId = localStorage.getItem(ID_KEY);
+    if (!storedId) {
+      const newId = await generateDeviceId();
+      localStorage.setItem(ID_KEY, JSON.stringify(newId));
+      storedId = JSON.stringify(newId);
+    }
+    if (storedId && typeof storedId === "string") {
+      return JSON.parse(storedId);
+    }
+    throw new Error("Failed to get device ID from local storage");
+  })();
+
+  return getDeviceIdPromise;
 }
 async function displayNameIsTaken(displayName) {
   const db = getDb();
@@ -50,7 +51,7 @@ export async function setDeviceDisplayName(newName) {
   if (!newName || typeof newName !== "string" || newName.trim() === "") {
     throw new Error("EMPTY");
   }
-  if(newName.includes("-<>-")){
+  if (newName.includes("-<>-")) {
     throw new Error("CONTAINS_SEPARATOR");
   }
   if (await displayNameIsTaken(newName)) {

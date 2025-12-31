@@ -24,3 +24,5 @@ dist-ssr
 *.sw?
 src/firebase.js
 .chrome-debug-profile
+test-results
+playwright-report

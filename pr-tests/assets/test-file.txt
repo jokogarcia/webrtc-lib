@@ -1,0 +1,58 @@
+The test is failing because the WebRTC connection is stuck in "Connecting..." status. Let me check what the actual status text should be and add more debugging to understand why the connection isn't establishing.
+
+Now I can see the issue! Looking at the search results, the status text should be "Data Channel is open" but the test is looking for the wrong text. Let me check what the main-v2.js file actually sets the status to and fix the test.
+
+main-v2.js
+
+Perfect! I found the issue. The status text is set to Data Channel is ${dataChannelStatus} where dataChannelStatus becomes "open" when there are active connections. So the text should be "Data Channel is open".
+
+However, the WebRTC connection might still be failing in the test environment. Let me add better debugging and also check if Firebase is working properly in tests:
+
+Edited
+connect.spec.ts+55-4
+Now let's also check if there are any Firebase configuration issues that might be preventing the connection in the test environment. Let me check if Firebase needs specific permissions or configuration:
+
+Now let me check the Firebase configuration to see if there might be any issues with connectivity in the test environment:
+
+firebase.js
+
+The issue is most likely that Firebase is not available or accessible in the test environment. WebRTC connections are being initiated but they require Firebase Firestore for signaling, and this is probably failing in the test environment.
+
+Let's add a check to catch Firebase errors and also potentially mock Firebase or use a different approach for tests:
+
+Edited
+connect.spec.ts+19-11
+Let me read the current file again to see its exact structure:
+
+The core issue is that the WebRTC connection isn't establishing. This is likely because:
+
+Firebase isn't accessible in the test environment (external network calls might be blocked)
+STUN servers might not be reachable in the test environment
+ICE candidate exchange is failing through Firebase
+Let me add some more browser flags to resolve network connectivity issues and also check if we should use a local STUN server or different configuration:
+
+Edited
+playwright.config.ts+6-0
+Now, let me also add some immediate debugging by having the test log more information. The key issue seems to be that one peer is calling [initiateConnection]my-webrtc-functions-v2.js ) but the other peer isn't automatically replying. Let me check if the autoreply mechanism is working: ](https://microsoft.com)))
+
+Edited
+connect.spec.ts+19-0
+The fundamental issue is likely that Firebase Firestore is not accessible in the test environment. This means:
+
+The signaling server (Firebase) can't exchange offers/answers
+ICE candidates can't be exchanged
+The WebRTC connection never establishes
+For tests to work, you have several options:
+
+Use Firebase Emulator for local testing
+Mock the Firebase signaling with local WebSocket or other mechanism
+Allow network access to Firebase in tests
+Skip WebRTC parts and test UI only
+Let's try running the test with the improved debugging to see what specific errors we get. If Firebase is indeed the issue, you might need to either:
+
+Set up Firebase emulators for testing
+Mock the WebRTC signaling mechanism
+Or allow external network access for the test environment
+Run the test again and let me know what the console output shows - that will tell us exactly where the connection is failing.
+
+Claude Sonnet 4 • 1x
