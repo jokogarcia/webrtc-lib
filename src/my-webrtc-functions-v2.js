@@ -1,6 +1,6 @@
-import { getDb } from "./utils";
-import { getDeviceId } from "./device-id.js";
-const db = getDb();
+import { SignalingService, getDeviceId } from "./firebase-signaling-service.js";
+
+
 let _autoreplyEnabled = true;
 /**
  * If autoreply is enabled, incoming connections will be automatically answered.
@@ -35,62 +35,78 @@ export function setIceServers(iceServers, iceCandidatePoolSize=10) {
 // Store multiple peer connections: callId -> { pc, dataChannel }
 const peerConnections = new Map();
 
+function handleIncomingCall(callId, offer) {
+  if (_autoreplyEnabled) {
+    replyToConnection(callId,offer);
+    return;
+  }
+  const peerId = offer.callerId;
+  document.dispatchEvent(
+    new CustomEvent("incoming-call", {
+      detail: {
+        callId: callId,
+        peerId: peerId,
+      },
+    })
+  );
+}
+/**
+ * Called when a caller receives an answer from the callee.
+ * @param {string} callId 
+ * @param {*} answer 
+ */
+function handleAnswer(callId, answer) {
+  const connection = peerConnections.get(callId);
+  if (connection) {
+    const remoteDesc = new RTCSessionDescription(answer);
+    connection.pc.setRemoteDescription(remoteDesc);
+  }
+}
+function handleCandidate(callId, candidate) {
+  const connection = peerConnections.get(callId);
+  if (connection) {
+    connection.pc.addIceCandidate(candidate);
+  }
+}
+
+const signalingService = new SignalingService(
+  handleIncomingCall, 
+  handleAnswer, 
+  handleCandidate,
+  getDeviceId().then(idObj=>idObj.displayName)
+);
+
 /**
  *
  * @param {string} callerName The id of the caller
  * @param {string} calleeName The id of the callee
  */
-export async function initiateConnection(callerName, calleeName) {
+export async function initiateConnection(calleeName) {
   // 1. Create new peer connection for this call
   const pc = new RTCPeerConnection(servers);
-  const callDoc = db.collection("calls").doc();
-  const callId = callDoc.id;
-
+  const callerName = (await getDeviceId()).displayName;
+  
+  
   // Create data channel
   const dataChannel = pc.createDataChannel(`${callerName}-<>-${calleeName}`);
 
+  // 2. Create Offer
+  const offerDescription = await pc.createOffer();
+  await pc.setLocalDescription(offerDescription);
+  const callId = await signalingService.createCall(calleeName, offerDescription);
   // Store this connection
   peerConnections.set(callId, { pc, dataChannel });
   setDataChannel(dataChannel, callId);
-
-  // 2. Setup Firebase refs (same as Fireship demo)
-  await callDoc.set({ callerName, calleeName });
-  const offerCandidates = callDoc.collection("offerCandidates");
-  const answerCandidates = callDoc.collection("answerCandidates");
-
   pc.onicecandidate = (event) => {
-    event.candidate && offerCandidates.add(event.candidate.toJSON());
-  };
-
-  // 3. Create Offer
-  const offerDescription = await pc.createOffer();
-  await pc.setLocalDescription(offerDescription);
-
+    if (event.candidate) {
+      signalingService.pushICECandidate(callId, event.candidate,true);
+    }
+  }
   const offer = {
     sdp: offerDescription.sdp,
     type: offerDescription.type,
   };
 
-  await callDoc.update({ offer });
-
-  // 4. Listen for Answer
-  callDoc.onSnapshot((snapshot) => {
-    const data = snapshot.data();
-    if (!pc.currentRemoteDescription && data?.answer) {
-      const answerDescription = new RTCSessionDescription(data.answer);
-      pc.setRemoteDescription(answerDescription);
-    }
-  });
-
-  // Listen for remote ICE candidates
-  answerCandidates.onSnapshot((snapshot) => {
-    snapshot.docChanges().forEach((change) => {
-      if (change.type === "added") {
-        let data = change.doc.data();
-        pc.addIceCandidate(new RTCIceCandidate(data));
-      }
-    });
-  });
 
   //Listen for data channel initiated by the callee
   pc.ondatachannel = (event) => {
@@ -100,30 +116,22 @@ export async function initiateConnection(callerName, calleeName) {
   }
 }
 
-export async function replyToConnection(callId) {
+export async function replyToConnection(callId, offer) {
   // Create new peer connection for this call
   const pc = new RTCPeerConnection(servers);
-
-  const callDoc = db.collection("calls").doc(callId);
-  const peerName = (await callDoc.get()).data().callerName;
-  const answerCandidates = callDoc.collection("answerCandidates");
-  const offerCandidates = callDoc.collection("offerCandidates");
-
   pc.onicecandidate = (event) => {
-    event.candidate && answerCandidates.add(event.candidate.toJSON());
+    if (event.candidate) {
+      signalingService.pushICECandidate(callId, event.candidate,false);
+    }
   };
-
-  // IMPORTANT: Listen for the data channel initiated by the caller
+    // Listen for the data channel initiated by the caller
   pc.ondatachannel = (event) => {
     const dataChannel = event.channel;
     // Store this connection
     peerConnections.set(callId, { pc, dataChannel });
     setDataChannel(dataChannel, callId);
   };
-
-  const callData = (await callDoc.get()).data();
-  const offerDescription = callData.offer;
-  await pc.setRemoteDescription(new RTCSessionDescription(offerDescription));
+  await pc.setRemoteDescription(offer);
 
   const answerDescription = await pc.createAnswer();
   await pc.setLocalDescription(answerDescription);
@@ -133,16 +141,7 @@ export async function replyToConnection(callId) {
     sdp: answerDescription.sdp,
   };
 
-  await callDoc.update({ answer });
-
-  offerCandidates.onSnapshot((snapshot) => {
-    snapshot.docChanges().forEach((change) => {
-      if (change.type === "added") {
-        let data = change.doc.data();
-        pc.addIceCandidate(new RTCIceCandidate(data));
-      }
-    });
-  });
+  await signalingService.answerCall(callId, answer);
 }
 
 /**
@@ -233,34 +232,7 @@ export function getActiveConnections() {
     return connection && connection.dataChannel.readyState === "open";
   });
 }
-//listen for incoming calls:
-getDeviceId().then((id) => {
-  db.collection("calls")
-    .where("calleeName", "==", id.displayName)
-    .onSnapshot((snapshot) => {
-      snapshot.docChanges().forEach(async (change) => {
-        if (change.type === "added") {
-          console.log("Incoming call:", change.doc);
-          if (_autoreplyEnabled) {
-            await replyToConnection(change.doc.id);
-            return;
-          }
 
-          const callDoc = db.collection("calls").doc(change.doc.id);
-          const callData = (await callDoc.get()).data();
-          const peerId = callData.callerId;
-          document.dispatchEvent(
-            new CustomEvent("incoming-call", {
-              detail: {
-                callId: change.doc.id,
-                peerId: peerId,
-              },
-            })
-          );
-        }
-      });
-    });
-});
 
 // File sending function
 export async function sendFile(file, callId) {

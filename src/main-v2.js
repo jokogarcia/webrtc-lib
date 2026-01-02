@@ -1,5 +1,5 @@
 import "./style.css";
-import { getDeviceId, setDeviceDisplayName } from "./device-id.js";
+import { getDeviceId, setDeviceDisplayName } from "./firebase-signaling-service.js";
 import {
   initiateConnection,
   broadcastMessage,
@@ -126,10 +126,9 @@ remoteIdInput.addEventListener("keydown", (event) => {
 });
 connectBtn.addEventListener("click", async () => {
   const remoteName = remoteIdInput.value.trim();
-  const myId = await getDeviceId();
   peerIdSpan.textContent = remoteName;
   statusDiv.textContent = "Connecting...";
-  await initiateConnection(myId.displayName, remoteName);
+  await initiateConnection(remoteName);
 });
 document.addEventListener("remote-message", (event) => {
   const msgDiv = document.createElement("div");
