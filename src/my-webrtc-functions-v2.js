@@ -1,4 +1,4 @@
-import { SignalingService, getDeviceId } from "./firebase-signaling-service.js";
+import { SignalingService, getDeviceId } from "./services/firebase-signaling-service.js";
 
 
 let _autoreplyEnabled = true;

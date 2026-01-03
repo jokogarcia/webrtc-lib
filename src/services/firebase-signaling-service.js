@@ -1,30 +1,6 @@
-import firebase from 'firebase/compat/app';
-import 'firebase/compat/firestore';
-import { firebaseConfig } from './firebase.js';
+import { getCallsCollection } from "./init-firebase";
 
-// Initialize Firebase
-let app;
-let db;
-/**
- * Initializes Firebase if not already initialized and returns the app and db instances.
- * @returns {app: firebase.app.App, db: firebase.firestore.Firestore}
- */
-export function initFirebase() {
-  if (!app) {
-    app = firebase.initializeApp(firebaseConfig);
-    db = firebase.firestore();
-  }
-  return { app, db };
-}
 
-/**
- * Gets the Firebase database instance, initializing Firebase if not already initialized.
- * @returns {firebase.firestore.Firestore}
- */
-export function getDb() {
-  if (!db) initFirebase();
-  return db;
-}
 
 export class SignalingService {
   /**
@@ -35,8 +11,8 @@ export class SignalingService {
    * @param {string | Promise<string>} peerId - Optional promise that resolves to the peer ID. At least one of peerId or peerIdPromise must be provided.
    */
   constructor(handleIncomingCall, handleAnswer, handleCandidate, peerId = "") {
-    this.db = getDb();
-    this.callsCollection = this.db.collection("calls");
+      
+    this.callsCollection = getCallsCollection();
     this.handleIncomingCall = handleIncomingCall;
     this.handleAnswer = handleAnswer;
     this.handleCandidate = handleCandidate;
@@ -123,7 +99,7 @@ export class SignalingService {
     const callDoc = this.callsCollection.doc(callId);
 
     // Delete subcollections properly
-    const batch = this.db.batch();
+    const batch = this.callsCollection.firestore.batch();
 
     const offerICECandidates = await callDoc
       .collection("offerICECandidates")
@@ -146,73 +122,4 @@ export class SignalingService {
     return callDoc.collection(collectionName).add(candidate.toJSON());
   }
         
-}
-//Device ID management code
-const ID_KEY = "my-webrtc-device-id";
-let getDeviceIdPromise = null;
-export async function getDeviceId() {
-  if (getDeviceIdPromise) return getDeviceIdPromise;
-
-  getDeviceIdPromise = (async () => {
-    let storedId = localStorage.getItem(ID_KEY);
-    if (!storedId) {
-      const newId = await generateDeviceId();
-      localStorage.setItem(ID_KEY, JSON.stringify(newId));
-      storedId = JSON.stringify(newId);
-    }
-    if (storedId && typeof storedId === "string") {
-      return JSON.parse(storedId);
-    }
-    throw new Error("Failed to get device ID from local storage");
-  })();
-
-  return getDeviceIdPromise;
-}
-async function displayNameIsTaken(displayName) {
-  const db = getDb();
-  const querySnapshot = await db
-    .collection("devices")
-    .where("displayName", "==", displayName)
-    .get();
-  return !querySnapshot.empty;
-}
-async function generateDeviceId() {
-  const db = getDb();
-  let displayName = getRandomDigits(5);
-  while (await displayNameIsTaken(displayName)) {
-    displayName = getRandomDigits(5);
-  }
-  const deviceDoc = db.collection("devices").doc();
-  const deviceDocId = deviceDoc.id;
-  let id = {
-    uuid: deviceDocId,
-    displayName,
-  };
-  await deviceDoc.set(id);
-  return id;
-}
-function getRandomDigits(length) {
-  const n = Math.floor(Math.random() * Math.pow(10, length));
-  return n.toString().padStart(length, "0");
-}
-export async function setDeviceDisplayName(newName) {
-  if (!newName || typeof newName !== "string" || newName.trim() === "") {
-    throw new Error("EMPTY");
-  }
-  if (newName.includes("-<>-")) {
-    throw new Error("CONTAINS_SEPARATOR");
-  }
-  if (await displayNameIsTaken(newName)) {
-    throw new Error("TAKEN");
-  }
-  const db = getDb();
-  const deviceId = await getDeviceId();
-  const deviceDoc = db.collection("devices").doc(deviceId.uuid);
-  await deviceDoc.update({ displayName: newName });
-  const updatedId = {
-    ...deviceId,
-    displayName: newName,
-  };
-  localStorage.setItem(ID_KEY, JSON.stringify(updatedId));
-  return updatedId;
 }

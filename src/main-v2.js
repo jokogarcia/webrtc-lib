@@ -1,5 +1,5 @@
 import "./style.css";
-import { getDeviceId, setDeviceDisplayName } from "./firebase-signaling-service.js";
+import { getDeviceId, setDeviceDisplayName } from "./services/firebase-signaling-service.js";
 import {
   initiateConnection,
   broadcastMessage,
