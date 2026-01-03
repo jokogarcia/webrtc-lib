@@ -14,9 +14,9 @@
   },
   "type": "module",
   "scripts": {
-    "dev": "vite example",
-    "build": "vite build example",
-    "preview": "vite preview example"
+    "dev": "vite test-app",
+    "build": "vite build test-app",
+    "preview": "vite preview test-app"
   },
   "devDependencies": {
     "@playwright/test": "1.57.0",
