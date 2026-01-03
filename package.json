@@ -8,6 +8,10 @@
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jokogarcia/webrtc-lib.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite example",
