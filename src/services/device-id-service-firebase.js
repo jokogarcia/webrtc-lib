@@ -3,14 +3,14 @@ import { getDevicesCollection } from "./init-firebase";
 
 export class FirebaseDeviceIdService extends DeviceIdServiceBase {
   constructor() {
-    
-    const deviceIdIsTakenFunc = async (displayName) => {
+
+    const _deviceIdIsTaken = async (deviceName) => {
       const querySnapshot = await getDevicesCollection()
-        .where("displayName", "==", displayName)
+        .where("deviceName", "==", deviceName)
         .get();
       return !querySnapshot.empty;
     };
-    const _updateDeviceIdFunc = async (currentName, newName) => {
+    const _updateDeviceId = async (currentName, newName) => {
       const deviceDocSnapshot = await getDevicesCollection()
         .where("deviceName", "==", currentName)
         .limit(1)
@@ -19,8 +19,13 @@ export class FirebaseDeviceIdService extends DeviceIdServiceBase {
         throw new Error("Device document not found in database.");
       }
       const deviceDoc = deviceDocSnapshot.docs[0];
-      await deviceDoc.ref.update({ deviceName: newName });
+      return deviceDoc.ref.update({ deviceName: newName });
     };
-    super(deviceIdIsTakenFunc, _updateDeviceIdFunc);
+    const _storeNewDeviceName = (newName) => {
+      const collection = getDevicesCollection();
+      const doc = collection.doc();
+      return doc.set({ deviceName: newName });
+    }
+    super(_deviceIdIsTaken, _updateDeviceId, _storeNewDeviceName);
   }
 }

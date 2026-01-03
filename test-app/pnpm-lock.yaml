@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@jokogarcia/webrtc-lib':
-        specifier: 0.0.2-beta
-        version: 0.0.2-beta
+        specifier: 0.0.4-beta
+        version: 0.0.4-beta
     devDependencies:
       vite:
         specifier: npm:rolldown-vite@7.2.5
@@ -246,8 +246,8 @@ packages:
     engines: {node: '>=6'}
     hasBin: true
 
-  '@jokogarcia/webrtc-lib@0.0.2-beta':
-    resolution: {integrity: sha512-Ak+Q8jeW4uo7HhRyFw/wwLOMsPR8WsMPZ5Pc6mxx5DEqI6vBK6JrRn4II+QGA1s1K9Lc3HwCBYslfutjUG0Ruw==, tarball: https://npm.pkg.github.com/download/@jokogarcia/webrtc-lib/0.0.2-beta/ac98e3ee3d75c49f57a7aea25800008abb66542c}
+  '@jokogarcia/webrtc-lib@0.0.4-beta':
+    resolution: {integrity: sha512-uDggUOiDZk6qAja7pH/KmrelbxniU8Aa6ZBeQ8JZRITNCyfLlztqqYQ4qgWxM//9XIFIQKoaNQZFYdpoWz8dGA==, tarball: https://npm.pkg.github.com/download/@jokogarcia/webrtc-lib/0.0.4-beta/cdeef8742a0ec2d77165752b07ff8782a7e6dcec}
 
   '@napi-rs/wasm-runtime@1.1.1':
     resolution: {integrity: sha512-p64ah1M1ld8xjWv3qbvFwHiFVWrq1yFvV4f7w+mzaqiR4IlSgkqhcRdHwsGgomwzBH51sRY4NEowLxnaBjcW/A==}
@@ -991,7 +991,7 @@ snapshots:
       protobufjs: 7.5.4
       yargs: 17.7.2
 
-  '@jokogarcia/webrtc-lib@0.0.2-beta':
+  '@jokogarcia/webrtc-lib@0.0.4-beta':
     dependencies:
       firebase: 12.7.0
     transitivePeerDependencies:

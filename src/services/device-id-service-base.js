@@ -3,10 +3,12 @@ export class DeviceIdServiceBase {
   constructor(
     deviceIdIsTakenFunc,
     updateDeviceIdFunc,
+    storeNewDeviceNameFunc,
     ID_KEY = "webrtc-lib-device-id"
   ) {
     this._deviceIdIsTakenFunc = deviceIdIsTakenFunc;
     this._updateDeviceIdFunc = updateDeviceIdFunc;
+    this._storeNewDeviceNameFunc = storeNewDeviceNameFunc;
     this.ID_KEY = ID_KEY;
   }
   getDeviceNamePromise() {
@@ -16,6 +18,7 @@ export class DeviceIdServiceBase {
         if (!deviceId) {
           try {
             deviceId = await this._generateDeviceId();
+            this._storeNewDeviceNameFunc(deviceId);
             localStorage.setItem(this.ID_KEY, deviceId);
           } catch (error) {
             console.error("Error generating device ID:", error);
@@ -53,7 +56,7 @@ export class DeviceIdServiceBase {
     }
     const currentName = await this.getDeviceName();
     await this._updateDeviceIdFunc(currentName, newName);
-    localStorage.setItem(ID_KEY, newName);
+    localStorage.setItem(this.ID_KEY, newName);
     return newName;
   }
 }
