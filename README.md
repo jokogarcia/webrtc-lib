@@ -2,6 +2,10 @@
 
 A simple WebRTC library for peer-to-peer communication with text messaging and file transfer capabilities, using Firebase Firestore for signaling.
 
+Focus is on dataChannel capabilities at the moment, live video and audio may be added in later versions
+
+Signaling services other than Firebase will also be added in future versions
+
 ## Features
 
 - 🚀 Easy peer-to-peer connection establishment
