@@ -27,3 +27,5 @@ src/firebase.js
 test-results
 playwright-report
 example/firebase.js
+.npmrc
+
