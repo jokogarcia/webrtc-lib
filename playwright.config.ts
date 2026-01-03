@@ -12,7 +12,7 @@ export default defineConfig({
         baseURL: 'http://localhost:5173',
         trace: 'on-first-retry',
         launchOptions: {
-            slowMo: 300,
+            slowMo: 600,
             args: [
                 '--use-fake-ui-for-media-stream',
                 '--use-fake-device-for-media-stream',

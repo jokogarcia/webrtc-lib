@@ -1,12 +1,17 @@
 import "./style.css";
-import { getDeviceId, setDeviceDisplayName } from "./firebase-signaling-service.js";
+import { firebaseConfig } from "./firebase.js";
 import {
+  initWebRTC,
   initiateConnection,
   broadcastMessage,
   getActiveConnections,
   sendFile,
-} from "./my-webrtc-functions-v2.js";
+  getDeviceName,
+  setDeviceName,
+} from "@jokogarcia/webrtc-lib";
 
+// Initialize the library
+initWebRTC(firebaseConfig);
 document.querySelector("#app").innerHTML = `
 <style>
   #messages {
@@ -34,7 +39,7 @@ document.querySelector("#app").innerHTML = `
     display: none;
   }
 </style>
-  <div>
+  <div id="container" class="hidden">
     <label for="display-name-input">My Name:</label>
     <input type="text" id="display-name-input" /><p class="validation-error hidden" id="display-name-input-error" ></p>
     <button id="set-name-btn">Set Name</button>
@@ -48,6 +53,7 @@ document.querySelector("#app").innerHTML = `
     <button id="send-btn" disabled>Send</button>
     <input type="file" id="file-input" /><button id="send-file-btn" disabled>Send File</button>
   </div>
+  <div id="loading">Loading...</div>
 `;
 const displayNameInput = document.getElementById("display-name-input");
 const displayNameInputError = document.getElementById(
@@ -66,9 +72,12 @@ const sendFileBtn = document.getElementById("send-file-btn");
 let dataChannelStatus = "closed";
 let currentDisplayName = "";
 let activeConnections = getActiveConnections();
-getDeviceId().then((id) => {
-  displayNameInput.value = id.displayName;
-  currentDisplayName = id.displayName;
+
+getDeviceName().then((name) => {
+  displayNameInput.value = name;
+  currentDisplayName = name;
+  document.getElementById("loading").classList.add("hidden");
+  document.getElementById("container").classList.remove("hidden");
 });
 displayNameInput.addEventListener("input", () => {
   setNameBtn.disabled =
@@ -79,8 +88,8 @@ setNameBtn.addEventListener("click", async () => {
   const newName = displayNameInput.value.trim();
   if (newName && newName !== currentDisplayName) {
     try {
-      const updatedId = await setDeviceDisplayName(newName);
-      currentDisplayName = updatedId.displayName;
+      const updatedName = await setDeviceName(newName);
+      currentDisplayName = updatedName;
       setNameBtn.disabled = true;
       displayNameInputError.classList.add("hidden");
     } catch (error) {

@@ -12,20 +12,28 @@ A simple WebRTC library for peer-to-peer communication with text messaging and f
 - 🌐 Firebase Firestore signaling
 - 📊 Progress events for file transfers
 
-## Setup
+## Installation
 
-### Prerequisites
+Install the package using npm/pnpm:
 
-1. Firebase project with Firestore enabled
-2. Configure Firebase in your project (see `firebase.js` and `utils.js`)
-3. Device ID system (see `device-id.js`)
+```bash
+npm install @jokogarcia/webrtc-lib
+```
 
-### Installation
+**Note**: This package is hosted on the GitHub Package Registry. You may need to create an `.npmrc` file in your project root with your GitHub authentication token:
 
-Import the library functions you need:
+```ini
+@jokogarcia:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=YOUR_GITHUB_TOKEN
+```
+
+## Usage
+
+First, import the library and initialize it with your Firebase configuration. This is **required** before calling any other functions.
 
 ```javascript
 import { 
+  initWebRTC,
   initiateConnection, 
   replyToConnection,
   sendMessage, 
@@ -34,8 +42,25 @@ import {
   getActiveConnections,
   setAutoreplyEnabled,
   setIceServers 
-} from './src/my-webrtc-functions-v2.js';
+} from '@jokogarcia/webrtc-lib';
+
+// Your Firebase configuration
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT_ID.firebasestorage.app",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+
+// Initialize the library
+initWebRTC(firebaseConfig);
 ```
+
+> **Important**: You can find your Firebase configuration/credentials in the [Firebase Console](https://console.firebase.google.com/) under Project Settings > General > Your Apps.
+>
+> **Security Note**: If you are using this in a client-side application, ensure your Firestore security rules are configured correctly to allow necessary access while preventing abuse. Do not commit sensitive keys if they require server-side restriction, though standard Firebase API keys are generally safe for client-side use with proper security rules.
 
 ## Basic Usage
 
@@ -229,12 +254,17 @@ document.addEventListener('remote-file', (event) => {
 
 ```javascript
 import { 
+  initWebRTC,
   initiateConnection, 
   sendMessage, 
   sendFile,
   getActiveConnections,
   setAutoreplyEnabled 
-} from './src/my-webrtc-functions-v2.js';
+} from '@jokogarcia/webrtc-lib';
+
+// 1. Initialize
+initWebRTC({ /* your firebase config */ });
+
 
 // Configure the library
 setAutoreplyEnabled(true);
@@ -342,8 +372,6 @@ Always wrap async operations in try-catch blocks for proper error handling.
 
 - Firebase/Firestore (for signaling)
 - WebRTC API (built into modern browsers)
-- Custom device-id module
-- Custom utils module (Firebase configuration)
 
 ## Browser Support
 

@@ -1,0 +1,3 @@
+@jokogarcia:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=[YOUR AUTH TOKEN WITH PACKAGE READING PERMISSION]
+minimum-release-age: 2880 # Wait 48 hours before allowing a new version
