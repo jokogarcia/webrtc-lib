@@ -10,6 +10,8 @@ test('Connect two peers and exchange messages', async ({ browser }) => {
     // Navigate both peers to the app
     peerOnePage.on('console', msg => console.log('P1:', msg.text()));
     peerTwoPage.on('console', msg => console.log('P2:', msg.text()));
+    peerOnePage.on('pageerror', error => console.log('P1 Page Error:', error.message));
+    peerTwoPage.on('pageerror', error => console.log('P2 Page Error:', error.message));
     await peerOnePage.goto('/');
     await peerTwoPage.goto('/');
     // Wait for both pages to load
@@ -37,8 +39,7 @@ test('Connect two peers and exchange messages', async ({ browser }) => {
     // Ensure Set Name buttons are enabled
     await expect(peerOneSetNameBtn).toBeEnabled();
     await expect(peerTwoSetNameBtn).toBeEnabled();
-    await peerOneSetNameBtn.click();
-    await peerTwoSetNameBtn.click();
+    
 
     //wait 2 s
     await peerOnePage.waitForTimeout(2000);

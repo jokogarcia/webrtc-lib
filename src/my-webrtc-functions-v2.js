@@ -1,4 +1,6 @@
-import { SignalingService, getDeviceId } from "./services/firebase-signaling-service.js";
+import { FirebaseSignalingService as SignalingService } from "./services/signaling-service-firebase.js";
+import { FirebaseDeviceIdService as DeviceIdService } from "./services/device-id-service-firebase.js";
+const deviceIdService = new DeviceIdService();
 
 
 let _autoreplyEnabled = true;
@@ -58,7 +60,7 @@ function handleIncomingCall(callId, offer) {
 function handleAnswer(callId, answer) {
   const connection = peerConnections.get(callId);
   if (connection) {
-    const remoteDesc = new RTCSessionDescription(answer);
+    const remoteDesc = new RTCSessionDescription(JSON.parse(answer));
     connection.pc.setRemoteDescription(remoteDesc);
   }
 }
@@ -73,7 +75,7 @@ const signalingService = new SignalingService(
   handleIncomingCall, 
   handleAnswer, 
   handleCandidate,
-  getDeviceId().then(idObj=>idObj.displayName)
+  deviceIdService.getDeviceName()
 );
 
 /**
@@ -84,7 +86,7 @@ const signalingService = new SignalingService(
 export async function initiateConnection(calleeName) {
   // 1. Create new peer connection for this call
   const pc = new RTCPeerConnection(servers);
-  const callerName = (await getDeviceId()).displayName;
+  const callerName = await deviceIdService.getDeviceName();
   
   
   // Create data channel
@@ -99,7 +101,7 @@ export async function initiateConnection(calleeName) {
   setDataChannel(dataChannel, callId);
   pc.onicecandidate = (event) => {
     if (event.candidate) {
-      signalingService.pushICECandidate(callId, event.candidate,true);
+      signalingService.pushICECandidate(callId, event.candidate.toJSON(),true);
     }
   }
   const offer = {
@@ -121,7 +123,7 @@ export async function replyToConnection(callId, offer) {
   const pc = new RTCPeerConnection(servers);
   pc.onicecandidate = (event) => {
     if (event.candidate) {
-      signalingService.pushICECandidate(callId, event.candidate,false);
+      signalingService.pushICECandidate(callId, event.candidate.toJSON(),false);
     }
   };
     // Listen for the data channel initiated by the caller
@@ -140,8 +142,8 @@ export async function replyToConnection(callId, offer) {
     type: answerDescription.type,
     sdp: answerDescription.sdp,
   };
-
-  await signalingService.answerCall(callId, answer);
+  const answerJSON = JSON.stringify(answer);
+  await signalingService.answerCall(callId, answerJSON);
 }
 
 /**
