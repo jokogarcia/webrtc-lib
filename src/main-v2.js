@@ -7,7 +7,7 @@ import {
   broadcastMessage,
   getActiveConnections,
   sendFile,
-} from "./my-webrtc-functions-v2.js";
+} from "./webrtc-lib.js";
 document.querySelector("#app").innerHTML = `
 <style>
   #messages {

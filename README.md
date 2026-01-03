@@ -17,8 +17,7 @@ A simple WebRTC library for peer-to-peer communication with text messaging and f
 ### Prerequisites
 
 1. Firebase project with Firestore enabled
-2. Configure Firebase in your project (see `firebase.js` and `utils.js`)
-3. Device ID system (see `device-id.js`)
+2. Configure Firebase in your project (see `firebase.js`)
 
 ### Installation
 
