@@ -22,8 +22,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-src/firebase.js
-.chrome-debug-profile
-test-results
-playwright-report
-example/firebase.js

@@ -1,21 +1,27 @@
 {
-  "name": "webrtc-test",
-  "private": true,
-  "version": "0.0.0",
+  "name": "@jokogarcia/webrtc-lib",
+  "version": "0.0.1",
+  "main": "src/index.js",
+  "files": [
+    "src"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "vite example",
+    "build": "vite build example",
+    "preview": "vite preview example"
   },
   "devDependencies": {
-    "@playwright/test": "^1.57.0",
+    "@playwright/test": "1.57.0",
     "vite": "npm:rolldown-vite@7.2.5"
   },
   "overrides": {
     "vite": "npm:rolldown-vite@7.2.5"
   },
   "dependencies": {
-    "firebase": "^12.7.0"
+    "firebase": "12.7.0"
   }
 }

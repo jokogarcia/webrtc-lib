@@ -17,10 +17,13 @@ A simple WebRTC library for peer-to-peer communication with text messaging and f
 ### Prerequisites
 
 1. Firebase project with Firestore enabled
-2. Configure Firebase in your project (see `firebase.js`)
+2. Configure Firebase in your project (see `firebase.js` and `firebase-initializer`)
 
 ### Installation
 
+Copy the source files to your project
+- webrtc-lib.js
+- services/*
 Import the library functions you need:
 
 ```javascript
@@ -33,7 +36,7 @@ import {
   getActiveConnections,
   setAutoreplyEnabled,
   setIceServers 
-} from './src/my-webrtc-functions-v2.js';
+} from './webrtc-lib.js';
 ```
 
 ## Basic Usage

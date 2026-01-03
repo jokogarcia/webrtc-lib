@@ -1,13 +1,17 @@
 import "./style.css";
-import "./firebase-initializer.js";
-import { FirebaseDeviceIdService as DeviceIdService } from "./services/device-id-service-firebase";
-
+import { firebaseConfig } from "./firebase.js";
 import {
+  initWebRTC,
   initiateConnection,
   broadcastMessage,
   getActiveConnections,
   sendFile,
-} from "./webrtc-lib.js";
+  getDeviceName,
+  setDeviceName,
+} from "../src/index.js";
+
+// Initialize the library
+initWebRTC(firebaseConfig);
 document.querySelector("#app").innerHTML = `
 <style>
   #messages {
@@ -68,8 +72,8 @@ const sendFileBtn = document.getElementById("send-file-btn");
 let dataChannelStatus = "closed";
 let currentDisplayName = "";
 let activeConnections = getActiveConnections();
-const deviceIdService = new DeviceIdService();
-deviceIdService.getDeviceName().then((name) => {
+
+getDeviceName().then((name) => {
   displayNameInput.value = name;
   currentDisplayName = name;
   document.getElementById("loading").classList.add("hidden");
@@ -84,7 +88,7 @@ setNameBtn.addEventListener("click", async () => {
   const newName = displayNameInput.value.trim();
   if (newName && newName !== currentDisplayName) {
     try {
-      const updatedName = await deviceIdService.setDeviceName(newName);
+      const updatedName = await setDeviceName(newName);
       currentDisplayName = updatedName;
       setNameBtn.disabled = true;
       displayNameInputError.classList.add("hidden");

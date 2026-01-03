@@ -1,7 +1,40 @@
+import { initFirebase } from "./services/init-firebase.js";
 import { FirebaseSignalingService as SignalingService } from "./services/signaling-service-firebase.js";
 import { FirebaseDeviceIdService as DeviceIdService } from "./services/device-id-service-firebase.js";
-const deviceIdService = new DeviceIdService();
 
+let deviceIdService;
+let signalingService;
+
+export function initWebRTC(firebaseConfig) {
+  if (deviceIdService && signalingService) {
+    console.warn("WebRTC library already initialized.");
+    return;
+  }
+  initFirebase(firebaseConfig);
+  deviceIdService = new DeviceIdService();
+  signalingService = new SignalingService(
+    handleIncomingCall,
+    handleAnswer,
+    handleCandidate,
+    deviceIdService.getDeviceName()
+  );
+}
+
+function ensureInitialized() {
+  if (!deviceIdService || !signalingService) {
+    throw new Error("WebRTC library not initialized. Call initWebRTC(firebaseConfig) first.");
+  }
+}
+
+export async function getDeviceName() {
+  ensureInitialized();
+  return deviceIdService.getDeviceName();
+}
+
+export async function setDeviceName(name) {
+  ensureInitialized();
+  return deviceIdService.setDeviceName(name);
+}
 
 let _autoreplyEnabled = true;
 /**
@@ -29,7 +62,7 @@ let servers = {
  * @param {RTCIceServer[]} iceServers
  * @param {number} iceCandidatePoolSize
  */
-export function setIceServers(iceServers, iceCandidatePoolSize=10) {
+export function setIceServers(iceServers, iceCandidatePoolSize = 10) {
   servers.iceServers = iceServers;
   servers.iceCandidatePoolSize = iceCandidatePoolSize;
 }
@@ -39,7 +72,7 @@ const peerConnections = new Map();
 
 function handleIncomingCall(callId, offer) {
   if (_autoreplyEnabled) {
-    replyToConnection(callId,offer);
+    replyToConnection(callId, offer);
     return;
   }
   const peerId = offer.callerId;
@@ -71,12 +104,7 @@ function handleCandidate(callId, candidate) {
   }
 }
 
-const signalingService = new SignalingService(
-  handleIncomingCall, 
-  handleAnswer, 
-  handleCandidate,
-  deviceIdService.getDeviceName()
-);
+// SignalingService initialization moved to initWebRTC
 
 /**
  *
@@ -84,11 +112,12 @@ const signalingService = new SignalingService(
  * @param {string} calleeName The id of the callee
  */
 export async function initiateConnection(calleeName) {
+  ensureInitialized();
   // 1. Create new peer connection for this call
   const pc = new RTCPeerConnection(servers);
   const callerName = await deviceIdService.getDeviceName();
-  
-  
+
+
   // Create data channel
   const dataChannel = pc.createDataChannel(`${callerName}-<>-${calleeName}`);
 
@@ -101,7 +130,7 @@ export async function initiateConnection(calleeName) {
   setDataChannel(dataChannel, callId);
   pc.onicecandidate = (event) => {
     if (event.candidate) {
-      signalingService.pushICECandidate(callId, event.candidate.toJSON(),true);
+      signalingService.pushICECandidate(callId, event.candidate.toJSON(), true);
     }
   }
   const offer = {
@@ -119,14 +148,15 @@ export async function initiateConnection(calleeName) {
 }
 
 export async function replyToConnection(callId, offer) {
+  ensureInitialized();
   // Create new peer connection for this call
   const pc = new RTCPeerConnection(servers);
   pc.onicecandidate = (event) => {
     if (event.candidate) {
-      signalingService.pushICECandidate(callId, event.candidate.toJSON(),false);
+      signalingService.pushICECandidate(callId, event.candidate.toJSON(), false);
     }
   };
-    // Listen for the data channel initiated by the caller
+  // Listen for the data channel initiated by the caller
   pc.ondatachannel = (event) => {
     const dataChannel = event.channel;
     // Store this connection
