@@ -108,8 +108,8 @@ function handleCandidate(callId, candidate) {
 
 /**
  *
- * @param {string} callerName The id of the caller
  * @param {string} calleeName The id of the callee
+ * @returns {string} callId 
  */
 export async function initiateConnection(calleeName) {
   ensureInitialized();
@@ -145,6 +145,7 @@ export async function initiateConnection(calleeName) {
     peerConnections.set(callId, { pc, dataChannel });
     setDataChannel(dataChannel, callId);
   }
+  return callId;
 }
 
 export async function replyToConnection(callId, offer) {
@@ -185,14 +186,14 @@ function setDataChannel(channel, callId) {
   channel.onopen = () => {
     document.dispatchEvent(
       new CustomEvent("data-channel-state", {
-        detail: { state: "open", callId },
+        detail: { state: "open", callId, channelName:channel.label },
       })
     );
   };
   channel.onclose = () => {
     document.dispatchEvent(
       new CustomEvent("data-channel-state", {
-        detail: { state: "closed", callId },
+        detail: { state: "closed", callId,channelName:channel.label },
       })
     );
     // Clean up when channel closes
@@ -334,6 +335,7 @@ async function _doFileSend(channel, file) {
     headerView.setUint16(22, chunk.size); // Content size
     // Write filename
     new Uint8Array(header, 24).set(fileNameBytes);
+    const senderName = await getDeviceName();
     // Read chunk and send
     await new Promise((resolve, reject) => {
       reader.onload = () => {
@@ -351,6 +353,7 @@ async function _doFileSend(channel, file) {
               fileSize: file.size,
               totalChunks,
               sentChunks: chunkIndex + 1,
+              sender:senderName
             },
           })
         );
